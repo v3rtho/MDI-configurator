@@ -1,4 +1,4 @@
-﻿# Microsoft Defender for Identity - PowerShell GUI Wrapper
+# Microsoft Defender for Identity - PowerShell GUI Wrapper
 # Requires: PowerShell 5.1 or later
 
 Add-Type -AssemblyName PresentationFramework
@@ -273,21 +273,23 @@ Add-Type -AssemblyName PresentationFramework
 
                         <TextBlock TextWrapping="Wrap" 
                                    Margin="0,0,0,15">
-                            <Run Text="The DSA is used by MDI to query domain controllers for suspicious activities."/>
+                            <Run Text="The DSA is a Group Managed Service Account (gMSA) used by MDI to query domain controllers for suspicious activities."/>
                         </TextBlock>
 
-                        <Label Content="DSA Username:"/>
-                        <TextBox x:Name="txtDsaUsername" 
-                                 Margin="0,0,0,10"/>
+                        <Label Content="gMSA Identity (username):"/>
+                        <TextBox x:Name="txtGmsaIdentity" 
+                                 Margin="0,0,0,10"
+                                 ToolTip="e.g., mdiSvc01"/>
 
-                        <Label Content="DSA Password:"/>
-                        <PasswordBox x:Name="txtDsaPassword" 
-                                     Margin="0,0,0,15"/>
+                        <Label Content="gMSA Group Name:"/>
+                        <TextBox x:Name="txtGmsaGroupName" 
+                                 Margin="0,0,0,15"
+                                 ToolTip="e.g., mdiSvcGroup01"/>
 
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
                             <Button x:Name="btnCreateDSA" 
-                                    Content="Create DSA" 
-                                    Width="120" 
+                                    Content="Create gMSA DSA" 
+                                    Width="140" 
                                     Height="35"
                                     Margin="0,0,10,0"/>
                             
@@ -602,24 +604,27 @@ $Controls.btnTestConnection.Add_Click({
 
 # Create DSA button
 $Controls.btnCreateDSA.Add_Click({
-    $username = $Controls.txtDsaUsername.Text
-    $password = $Controls.txtDsaPassword.Password
+    $gmsaIdentity = $Controls.txtGmsaIdentity.Text.Trim()
+    $gmsaGroupName = $Controls.txtGmsaGroupName.Text.Trim()
     
-    if ([string]::IsNullOrWhiteSpace($username) -or [string]::IsNullOrWhiteSpace($password)) {
+    if ([string]::IsNullOrWhiteSpace($gmsaIdentity) -or [string]::IsNullOrWhiteSpace($gmsaGroupName)) {
         [System.Windows.MessageBox]::Show(
-            "Please enter both username and password.",
-            "Missing Credentials",
+            "Please enter both gMSA Identity and gMSA Group Name.",
+            "Missing Information",
             [System.Windows.MessageBoxButton]::OK,
             [System.Windows.MessageBoxImage]::Warning)
         return
     }
     
-    $Controls.txtOutput.Text = "Creating DSA account...`n`n"
+    $command = "New-MDIDSA -Identity '$gmsaIdentity' -GmsaGroupName '$gmsaGroupName'"
+    
+    $Controls.txtOutput.Text = "Creating gMSA DSA account...`n`n"
+    $Controls.txtOutput.Text += "Executing: $command`n`n"
     
     try {
-        $secPass = ConvertTo-SecureString $password -AsPlainText -Force
-        $result = New-MDIDSA -Name $username -AccountPassword $secPass
+        $result = New-MDIDSA -Identity $gmsaIdentity -GmsaGroupName $gmsaGroupName
         $Controls.txtOutput.Text += $result | Out-String
+        $Controls.txtOutput.Text += "`n`ngMSA account created successfully!"
     }
     catch {
         $Controls.txtOutput.Text += "Error: $($_.Exception.Message)"
