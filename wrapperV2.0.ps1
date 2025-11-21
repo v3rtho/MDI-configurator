@@ -22,7 +22,7 @@ Add-Type -AssemblyName Microsoft.VisualBasic
 
         <!-- Title -->
         <Grid Grid.Row="0" Margin="0,0,0,15">
-            <TextBlock Text="Microsoft Defender for Identity PowerShell Module" 
+            <TextBlock Text="Defender for Identity configurator v1.0" 
                        FontSize="22" 
                        FontWeight="Bold"
                        HorizontalAlignment="Left"
@@ -207,6 +207,16 @@ Add-Type -AssemblyName Microsoft.VisualBasic
                             </StackPanel>
                         </GroupBox>
 
+                        <!-- GPO Options for Testing -->
+                        <GroupBox Header="GPO Options" Margin="0,0,0,15">
+                            <StackPanel>
+                                <Label Content="GPO Name Prefix (optional):" Margin="5,5,5,0"/>
+                                <TextBox x:Name="txtTestGpoNamePrefix" 
+                                         Margin="5,5,5,5"
+                                         ToolTip="Custom prefix for GPO names to test (e.g., 'MDI-' will test 'MDI-AuditPolicy')"/>
+                            </StackPanel>
+                        </GroupBox>
+
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -234,6 +244,16 @@ Add-Type -AssemblyName Microsoft.VisualBasic
                                 <RadioButton x:Name="rbReportLocalMachine" 
                                            Content="LocalMachine" 
                                            Margin="5"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- GPO Options for Reports -->
+                        <GroupBox Header="GPO Options" Margin="0,0,0,15">
+                            <StackPanel>
+                                <Label Content="GPO Name Prefix (optional):" Margin="5,5,5,0"/>
+                                <TextBox x:Name="txtReportGpoNamePrefix" 
+                                         Margin="5,5,5,5"
+                                         ToolTip="Custom prefix for GPO names to include in report (e.g., 'MDI-' will report on 'MDI-AuditPolicy')"/>
                             </StackPanel>
                         </GroupBox>
 
@@ -485,6 +505,17 @@ $Controls.chkAll.Add_Unchecked({
     $Controls.chkProcessorPerformance.IsChecked = $false
 })
 
+# Configuration tab - Mode selection handlers
+$Controls.rbDomain.Add_Checked({
+    $Controls.chkSkipGpoLink.IsEnabled = $true
+    $Controls.txtGpoNamePrefix.IsEnabled = $true
+})
+
+$Controls.rbLocalMachine.Add_Checked({
+    $Controls.chkSkipGpoLink.IsEnabled = $false
+    $Controls.txtGpoNamePrefix.IsEnabled = $false
+})
+
 # Test Check All checkbox handler
 $Controls.chkTestAll.Add_Checked({
     $Controls.chkTestAdfsAuditing.IsChecked = $true
@@ -512,6 +543,30 @@ $Controls.chkTestAll.Add_Unchecked({
     $Controls.chkTestDomainObjectAuditing.IsChecked = $false
     $Controls.chkTestNTLMAuditing.IsChecked = $false
     $Controls.chkTestProcessorPerformance.IsChecked = $false
+})
+
+# Test & Validate tab - Mode selection handlers
+$Controls.rbTestDomain.Add_Checked({
+    $Controls.txtTestGpoNamePrefix.IsEnabled = $true
+    $Controls.chkTestAll.IsEnabled = $true
+    $Controls.chkTestEntraConnectAuditing.IsEnabled = $true
+    $Controls.chkTestRemoteSAM.IsEnabled = $true
+})
+
+$Controls.rbTestLocalMachine.Add_Checked({
+    $Controls.txtTestGpoNamePrefix.IsEnabled = $false
+    $Controls.chkTestAll.IsEnabled = $false
+    $Controls.chkTestEntraConnectAuditing.IsEnabled = $false
+    $Controls.chkTestRemoteSAM.IsEnabled = $false
+})
+
+# Reports tab - Mode selection handlers
+$Controls.rbReportDomain.Add_Checked({
+    $Controls.txtReportGpoNamePrefix.IsEnabled = $true
+})
+
+$Controls.rbReportLocalMachine.Add_Checked({
+    $Controls.txtReportGpoNamePrefix.IsEnabled = $false
 })
 
 # Set Configuration button
@@ -584,9 +639,18 @@ $Controls.btnSetConfig.Add_Click({
         $command += " -Identity '$serviceAccount'"
     }
     
-    $Controls.txtOutput.Text = "Executing: $command`n`n"
-    $Controls.txtOutput.Text += "This may take a few moments...`n`n"
-    $Controls.txtOutput.Text += Invoke-MDICommand $command
+    # Set cursor to wait
+    $Window.Cursor = [System.Windows.Input.Cursors]::Wait
+    
+    try {
+        $Controls.txtOutput.Text = "Executing: $command`n`n"
+        $Controls.txtOutput.Text += "This may take a few moments...`n`n"
+        $Controls.txtOutput.Text += Invoke-MDICommand $command
+    }
+    finally {
+        # Reset cursor back to normal
+        $Window.Cursor = [System.Windows.Input.Cursors]::Arrow
+    }
 })
 
 # Test Configuration button
@@ -641,13 +705,28 @@ $Controls.btnTestConfig.Add_Click({
     $configString = $configs -join ","
     $command = "Test-MDIConfiguration -Mode $mode -Configuration $configString"
     
+    # Add GpoNamePrefix parameter if text is provided
+    $testGpoPrefix = $Controls.txtTestGpoNamePrefix.Text.Trim()
+    if (-not [string]::IsNullOrWhiteSpace($testGpoPrefix)) {
+        $command += " -GpoNamePrefix '$testGpoPrefix'"
+    }
+    
     # Add Identity parameter if provided
     if ($serviceAccount) {
         $command += " -Identity '$serviceAccount'"
     }
     
-    $Controls.txtOutput.Text = "Executing: $command`n`n"
-    $Controls.txtOutput.Text += Invoke-MDICommand $command
+    # Set cursor to wait
+    $Window.Cursor = [System.Windows.Input.Cursors]::Wait
+    
+    try {
+        $Controls.txtOutput.Text = "Executing: $command`n`n"
+        $Controls.txtOutput.Text += Invoke-MDICommand $command
+    }
+    finally {
+        # Reset cursor back to normal
+        $Window.Cursor = [System.Windows.Input.Cursors]::Arrow
+    }
 })
 
 # Generate Report button
@@ -665,10 +744,49 @@ $Controls.btnGenerateReport.Add_Click({
         return
     }
     
+    # If Domain mode is selected, prompt for gMSA account
+    $gmsaAccount = $null
+    if ($Controls.rbReportDomain.IsChecked) {
+        $gmsaAccount = [Microsoft.VisualBasic.Interaction]::InputBox(
+            "Enter the gMSA account name for the report:",
+            "gMSA Account Required",
+            ""
+        )
+        
+        if ([string]::IsNullOrWhiteSpace($gmsaAccount)) {
+            [System.Windows.MessageBox]::Show(
+                "gMSA account name is required for Domain mode reports.",
+                "Missing gMSA Account",
+                [System.Windows.MessageBoxButton]::OK,
+                [System.Windows.MessageBoxImage]::Warning)
+            return
+        }
+    }
+    
     $command = "New-MDIConfigurationReport -Path '$path' -Mode $mode $openReport"
     
-    $Controls.txtOutput.Text = "Executing: $command`n`n"
-    $Controls.txtOutput.Text += Invoke-MDICommand $command
+    # Add GpoNamePrefix parameter if text is provided
+    $reportGpoPrefix = $Controls.txtReportGpoNamePrefix.Text.Trim()
+    if (-not [string]::IsNullOrWhiteSpace($reportGpoPrefix)) {
+        $command += " -GpoNamePrefix '$reportGpoPrefix'"
+    }
+    
+    # Add Identity parameter if provided
+    if ($gmsaAccount) {
+        $command += " -Identity '$gmsaAccount'"
+    }
+    
+    # Set cursor to wait
+    $Window.Cursor = [System.Windows.Input.Cursors]::Wait
+    
+    try {
+        $Controls.txtOutput.Text = "Executing: $command`n`n"
+        $Controls.txtOutput.Text += Invoke-MDICommand $command
+    }
+    finally {
+        # Reset cursor back to normal
+        $Window.Cursor = [System.Windows.Input.Cursors]::Arrow
+    }
 })
 
 # Set Proxy button
@@ -738,9 +856,18 @@ $Controls.btnClearProxy.Add_Click({
 $Controls.btnTestConnection.Add_Click({
     $command = "Test-MDISensorApiConnection"
     
-    $Controls.txtOutput.Text = "Executing: $command`n`n"
-    $Controls.txtOutput.Text += "Testing connectivity to Defender for Identity cloud services...`n`n"
-    $Controls.txtOutput.Text += Invoke-MDICommand $command
+    # Set cursor to wait
+    $Window.Cursor = [System.Windows.Input.Cursors]::Wait
+    
+    try {
+        $Controls.txtOutput.Text = "Executing: $command`n`n"
+        $Controls.txtOutput.Text += "Testing connectivity to Defender for Identity cloud services...`n`n"
+        $Controls.txtOutput.Text += Invoke-MDICommand $command
+    }
+    finally {
+        # Reset cursor back to normal
+        $Window.Cursor = [System.Windows.Input.Cursors]::Arrow
+    }
 })
 
 # Create DSA button
@@ -759,16 +886,23 @@ $Controls.btnCreateDSA.Add_Click({
     
     $command = "New-MDIDSA -Identity '$gmsaIdentity' -GmsaGroupName '$gmsaGroupName'"
     
-    $Controls.txtOutput.Text = "Creating gMSA account...`n`n"
-    $Controls.txtOutput.Text += "Executing: $command`n`n"
+    # Set cursor to wait
+    $Window.Cursor = [System.Windows.Input.Cursors]::Wait
     
     try {
+        $Controls.txtOutput.Text = "Creating gMSA account...`n`n"
+        $Controls.txtOutput.Text += "Executing: $command`n`n"
+        
         $result = New-MDIDSA -Identity $gmsaIdentity -GmsaGroupName $gmsaGroupName
         $Controls.txtOutput.Text += $result | Out-String
         $Controls.txtOutput.Text += "`n`ngMSA account created successfully!"
     }
     catch {
         $Controls.txtOutput.Text += "Error: $($_.Exception.Message)"
+    }
+    finally {
+        # Reset cursor back to normal
+        $Window.Cursor = [System.Windows.Input.Cursors]::Arrow
     }
 })
 
@@ -787,16 +921,23 @@ $Controls.btnTestDSA.Add_Click({
     
     $command = "Test-MDIDSA -Identity '$gmsaIdentity' -Detailed"
     
-    $Controls.txtOutput.Text = "Testing gMSA account with detailed output...`n`n"
-    $Controls.txtOutput.Text += "Executing: $command`n`n"
-    $Controls.txtOutput.Text += "Testing Directory Service Account permissions and delegations...`n`n"
+    # Set cursor to wait
+    $Window.Cursor = [System.Windows.Input.Cursors]::Wait
     
     try {
+        $Controls.txtOutput.Text = "Testing gMSA account with detailed output...`n`n"
+        $Controls.txtOutput.Text += "Executing: $command`n`n"
+        $Controls.txtOutput.Text += "Testing Directory Service Account permissions and delegations...`n`n"
+        
         $result = Test-MDIDSA -Identity $gmsaIdentity -Detailed
         $Controls.txtOutput.Text += $result | Format-List * | Out-String
     }
     catch {
         $Controls.txtOutput.Text += "Error: $($_.Exception.Message)"
+    }
+    finally {
+        # Reset cursor back to normal
+        $Window.Cursor = [System.Windows.Input.Cursors]::Arrow
     }
 })
 
